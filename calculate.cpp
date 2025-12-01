@@ -533,6 +533,55 @@ SatellitePosition CalculateSatellitePosition(const EPHEMERISBLOCK& eph, double t
     double xk = rk * cos(uk);
     double yk = rk * sin(uk);
     
+    // // 关键修改：BDS卫星分类处理
+    // if (isBDS) {
+    //     // 判断卫星类型：GEO卫星(PRN 1-5), MEO/IGSO卫星(PRN 6-35)
+    //     bool isGEO = (eph.PRN >= 1 && eph.PRN <= 5);
+        
+    //     if (isGEO) {
+    //         // GEO卫星特殊处理（根据图片中的GEO公式）
+    //         // 计算历元升交点经度（惯性系）
+    //         double OMEGAk_inertial = eph.OMEGA + eph.OMEGAdot * tk - omega_e * eph.toe;
+    //         double OMEGAk_inertial = eph.OMEGA + eph.OMEGAdot * tk - omega_e * eph.toe;
+            
+    //         // 在惯性系中的坐标
+    //         double X_GK = xk * cos(OMEGAk_inertial) - yk * cos(ik) * sin(OMEGAk_inertial);
+    //         double Y_GK = xk * sin(OMEGAk_inertial) + yk * cos(ik) * cos(OMEGAk_inertial);
+    //         double Z_GK = yk * sin(ik);
+            
+    //         // 坐标转换到BDCS系：绕Z轴旋转(ωe*tk)，再绕X轴旋转(-5°)
+    //         // double rotationAngle = omega_e * tk;
+    //         // double phi = -5.0 * PI / 180.0; // -5度转弧度
+
+    //         double rotationAngleZ = omega_e * tk;  // 绕Z轴旋转角度
+    //         double rotationAngleX = -5.0 * PI / 180.0; // 绕X轴旋转-5度
+            
+    //         // 绕Z轴旋转
+    //         double X_temp = X_GK * cos(rotationAngle) + Y_GK * sin(rotationAngle);
+    //         double Y_temp = -X_GK * sin(rotationAngle) + Y_GK * cos(rotationAngle);
+    //         double Z_temp = Z_GK;
+            
+    //         // 绕X轴旋转(-5°)
+    //         pos.Y = Y_temp * cos(phi) + Z_temp * sin(phi);
+    //         pos.Z = -Y_temp * sin(phi) + Z_temp * cos(phi);
+    //         pos.X = X_temp;
+            
+    //     } else {
+    //         // MEO/IGSO卫星处理（与GPS类似但使用BDCS参数）
+    //         double OMEGAk = eph.OMEGA + (eph.OMEGAdot - omega_e) * tk - omega_e * eph.toe;
+            
+    //         pos.X = xk * cos(OMEGAk) - yk * cos(ik) * sin(OMEGAk);
+    //         pos.Y = xk * sin(OMEGAk) + yk * cos(ik) * cos(OMEGAk);
+    //         pos.Z = yk * sin(ik);
+    //     }
+    // } else {
+    //     // GPS卫星计算（保持不变）
+    //     double OMEGAk = eph.OMEGA + (eph.OMEGAdot - omega_e) * tk - omega_e * eph.toe;
+        
+    //     pos.X = xk * cos(OMEGAk) - yk * cos(ik) * sin(OMEGAk);
+    //     pos.Y = xk * sin(OMEGAk) + yk * cos(ik) * cos(OMEGAk);
+    //     pos.Z = yk * sin(ik);
+    // }
     // 关键修改：BDS卫星分类处理
     if (isBDS) {
         // 判断卫星类型：GEO卫星(PRN 1-5), MEO/IGSO卫星(PRN 6-35)
@@ -541,6 +590,7 @@ SatellitePosition CalculateSatellitePosition(const EPHEMERISBLOCK& eph, double t
         if (isGEO) {
             // GEO卫星特殊处理（根据图片中的GEO公式）
             // 计算历元升交点经度（惯性系）
+            // 关键修正：使用正确的公式 Ωk = Ω0 + Ω?·tk - Ω?e·toe
             double OMEGAk_inertial = eph.OMEGA + eph.OMEGAdot * tk - omega_e * eph.toe;
             
             // 在惯性系中的坐标
@@ -548,22 +598,24 @@ SatellitePosition CalculateSatellitePosition(const EPHEMERISBLOCK& eph, double t
             double Y_GK = xk * sin(OMEGAk_inertial) + yk * cos(ik) * cos(OMEGAk_inertial);
             double Z_GK = yk * sin(ik);
             
-            // 坐标转换到BDCS系：绕Z轴旋转(ωe*tk)，再绕X轴旋转(-5°)
-            double rotationAngle = omega_e * tk;
-            double phi = -5.0 * PI / 180.0; // -5度转弧度
+            // 关键修正：GEO卫星坐标转换（根据图片中的旋转矩阵公式）
+            // 先绕Z轴旋转(ωe·tk)，再绕X轴旋转(-5°)
+            double rotationAngleZ = omega_e * tk;  // 绕Z轴旋转角度
+            double rotationAngleX = -5.0 * PI / 180.0; // 绕X轴旋转-5度
             
             // 绕Z轴旋转
-            double X_temp = X_GK * cos(rotationAngle) + Y_GK * sin(rotationAngle);
-            double Y_temp = -X_GK * sin(rotationAngle) + Y_GK * cos(rotationAngle);
+            double X_temp = X_GK * cos(rotationAngleZ) + Y_GK * sin(rotationAngleZ);
+            double Y_temp = -X_GK * sin(rotationAngleZ) + Y_GK * cos(rotationAngleZ);
             double Z_temp = Z_GK;
             
             // 绕X轴旋转(-5°)
-            pos.Y = Y_temp * cos(phi) + Z_temp * sin(phi);
-            pos.Z = -Y_temp * sin(phi) + Z_temp * cos(phi);
             pos.X = X_temp;
+            pos.Y = Y_temp * cos(rotationAngleX) + Z_temp * sin(rotationAngleX);
+            pos.Z = -Y_temp * sin(rotationAngleX) + Z_temp * cos(rotationAngleX);
             
         } else {
             // MEO/IGSO卫星处理（与GPS类似但使用BDCS参数）
+            // 关键修正：使用正确的公式 Ωk = Ω0 + (Ω? - Ω?e)tk - Ω?e·toe
             double OMEGAk = eph.OMEGA + (eph.OMEGAdot - omega_e) * tk - omega_e * eph.toe;
             
             pos.X = xk * cos(OMEGAk) - yk * cos(ik) * sin(OMEGAk);
