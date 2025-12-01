@@ -182,10 +182,27 @@ int ReadBrodcastEphemeris(const char* filename, vector<EPHEMERISBLOCK>& ephemeri
             sscanf(strLine, "%lf %lf %lf %lf", 
                    &toe, &eph.Cic, &eph.OMEGA, &eph.Cis);
             
-            // 计算toe (星历参考时间)
-            eph.toe = eph.toc + (toe - (int)eph.toc % 86400);
-            if (eph.toe - eph.toc > 302400) eph.toe -= 604800;
-            if (eph.toe - eph.toc < -302400) eph.toe += 604800;
+            // // 计算toe (星历参考时间)
+            // eph.toe = eph.toc + (toe - (int)eph.toc % 86400);
+            // if (eph.toe - eph.toc > 302400) eph.toe -= 604800;
+            // if (eph.toe - eph.toc < -302400) eph.toe += 604800;
+
+            // BDS特殊处理：toe计算
+           if (satType == 'C') {
+                // BDS卫星：toe需要特殊处理
+                // BDS的toe是相对于参考时间的偏移，需要正确计算
+                eph.toe = eph.toc + toe;
+                
+                // 确保toe在合理范围内（±3.5天）
+                double timeDiff = eph.toe - eph.toc;
+                if (timeDiff > 302400.0) eph.toe -= 604800.0;
+                else if (timeDiff < -302400.0) eph.toe += 604800.0;
+            } else {
+                // GPS卫星计算保持不变
+                eph.toe = eph.toc + (toe - fmod(eph.toc, 86400.0));
+                if (eph.toe - eph.toc > 302400.0) eph.toe -= 604800.0;
+                if (eph.toe - eph.toc < -302400.0) eph.toe += 604800.0;
+            }
             
             fgets(strLine, sizeof(strLine), pfEph);
             sscanf(strLine, "%lf %lf %lf %lf", 
@@ -271,7 +288,16 @@ vector<PreciseEphemerisPoint> ReadPreciseEphemeris(const char* filename) {
             point.X = x * 1000.0;  // km转换为m
             point.Y = y * 1000.0;
             point.Z = z * 1000.0;
-            point.time = gpsWeekSecond;
+            // point.time = gpsWeekSecond;
+            // point.hour = hour;
+            // point.minute = minute;
+            // BDS时间调整：如果精密星历使用GPS时间，BDS需要调整
+            if (satType == 'C') {
+                point.time = gpsWeekSecond - 14.0;  // BDT = GPST - 14s
+            } else {
+                point.time = gpsWeekSecond;
+            }
+
             point.hour = hour;
             point.minute = minute;
             
@@ -313,97 +339,101 @@ const EPHEMERISBLOCK* FindClosestEphemeris(int prn, char satSystem, double time,
     return closestEph;
 }
 
-// GPS/BDS卫星位置计算
-SatellitePosition CalculateSatellitePosition(const EPHEMERISBLOCK& eph, double transmitTime, int hour, int minute) {
-    SatellitePosition pos;
-    pos.PRN = eph.PRN;
-    pos.satSystem = eph.satSystem;
-    pos.time = transmitTime;
-    pos.hour = hour;
-    pos.minute = minute;
-    pos.tow = fmod(transmitTime, 86400.0);
+// // GPS/BDS卫星位置计算
+// SatellitePosition CalculateSatellitePosition(const EPHEMERISBLOCK& eph, double transmitTime, int hour, int minute) {
+//     SatellitePosition pos;
+//     pos.PRN = eph.PRN;
+//     pos.satSystem = eph.satSystem;
+//     pos.time = transmitTime;
+//     pos.hour = hour;
+//     pos.minute = minute;
+//     pos.tow = fmod(transmitTime, 86400.0);
     
-    bool isBDS = (eph.satSystem == 'C');
-    
-    double mu = isBDS ? MU_BDS : MU_GPS;
-    double omega_e = isBDS ? OMEGA_E_BDS : OMEGA_E_GPS;
-    
-    // BDS时间系统调整：BDS使用BDT，与GPS时间有14秒偏差
-    double timeOffset = isBDS ? 14.0 : 0.0;
-    double adjustedTransmitTime = transmitTime - timeOffset;
-    
-    
-    // 计算时间差
-    double tk = transmitTime - eph.toe;
-    
-    // 处理周跳
-    if (tk > 302400.0) tk -= 604800.0;
-    if (tk < -302400.0) tk += 604800.0;
+//     bool isBDS = (eph.satSystem == 'C');
 
-    // BDS地球自转角速度需要调整（BDCS系）
-    if (isBDS) {
-        omega_e = 7.2921150e-5;  // 确保使用正确的BDS地球自转角速度
-    }
+//     // BDS时间系统调整：BDT = GPST - 14s
+//     double bdt_offset = isBDS ? 14.0 : 0.0;
+//     double bdtTime = transmitTime - bdt_offset;
 
-    // 计算平均角速度
-    double A = eph.SqrtA * eph.SqrtA;
-    double n0 = sqrt(mu / (A * A * A));
-    double n = n0 + eph.Deltan;
+//     double mu = isBDS ? MU_BDS : MU_GPS;
+//     double omega_e = isBDS ? OMEGA_E_BDS : OMEGA_E_GPS;
     
-    // 计算平近点角
-    double Mk = eph.M0 + n * tk;
+//     // // BDS时间系统调整：BDS使用BDT，与GPS时间有14秒偏差
+//     // double timeOffset = isBDS ? 14.0 : 0.0;
+//     // double adjustedTransmitTime = transmitTime - timeOffset;
     
-    // 迭代计算偏近点角
-    double Ek = Mk;
-    double Ek_prev;
-    for (int i = 0; i < 10; i++) {
-        Ek_prev = Ek;
-        Ek = Mk + eph.e * sin(Ek);
-        if (fabs(Ek - Ek_prev) < 1e-12) break;
-    }
     
-    // 计算真近点角
-    double sin_vk = (sqrt(1 - eph.e * eph.e) * sin(Ek)) / (1 - eph.e * cos(Ek));
-    double cos_vk = (cos(Ek) - eph.e) / (1 - eph.e * cos(Ek));
-    double vk = atan2(sin_vk, cos_vk);
+//     // 计算时间差
+//     double tk = transmitTime - eph.toe;
     
-    // 计算纬度幅角
-    double phik = vk + eph.omega;
-    
-    // 计算周期改正项
-    double delta_uk = eph.Cus * sin(2 * phik) + eph.Cuc * cos(2 * phik);
-    double delta_rk = eph.Crs * sin(2 * phik) + eph.Crc * cos(2 * phik);
-    double delta_ik = eph.Cis * sin(2 * phik) + eph.Cic * cos(2 * phik);
-    
-    // 计算改正后的参数
-    double uk = phik + delta_uk;
-    double rk = A * (1 - eph.e * cos(Ek)) + delta_rk;
-    double ik = eph.i0 + eph.IDOT * tk + delta_ik;
-    
-    // 计算轨道平面坐标
-    double xk = rk * cos(uk);
-    double yk = rk * sin(uk);
-    
-    // // 计算升交点经度
-    // double OMEGAk = eph.OMEGA + (eph.OMEGAdot - omega_e) * tk - omega_e * eph.toe;
-    
-    // BDS坐标系处理：GEO卫星有特殊处理，但这里先处理MEO/IGSO
-    double OMEGAk;
-    if (isBDS) {
-        // BDS使用BDCS坐标系，需要特殊处理
-        OMEGAk = eph.OMEGA + (eph.OMEGAdot - omega_e) * tk - omega_e * eph.toe;
-    } else {
-        // GPS使用WGS84
-        OMEGAk = eph.OMEGA + (eph.OMEGAdot - omega_e) * tk - omega_e * eph.toe;
-    }
+//     // 处理周跳
+//     if (tk > 302400.0) tk -= 604800.0;
+//     if (tk < -302400.0) tk += 604800.0;
 
-    // 计算ECEF坐标
-    pos.X = xk * cos(OMEGAk) - yk * cos(ik) * sin(OMEGAk);
-    pos.Y = xk * sin(OMEGAk) + yk * cos(ik) * cos(OMEGAk);
-    pos.Z = yk * sin(ik);
+//     // BDS地球自转角速度需要调整（BDCS系）
+//     if (isBDS) {
+//         omega_e = 7.2921150e-5;  // 确保使用正确的BDS地球自转角速度
+//     }
+
+//     // 计算平均角速度
+//     double A = eph.SqrtA * eph.SqrtA;
+//     double n0 = sqrt(mu / (A * A * A));
+//     double n = n0 + eph.Deltan;
     
-    return pos;
-}
+//     // 计算平近点角
+//     double Mk = eph.M0 + n * tk;
+    
+//     // 迭代计算偏近点角
+//     double Ek = Mk;
+//     double Ek_prev;
+//     for (int i = 0; i < 10; i++) {
+//         Ek_prev = Ek;
+//         Ek = Mk + eph.e * sin(Ek);
+//         if (fabs(Ek - Ek_prev) < 1e-12) break;
+//     }
+    
+//     // 计算真近点角
+//     double sin_vk = (sqrt(1 - eph.e * eph.e) * sin(Ek)) / (1 - eph.e * cos(Ek));
+//     double cos_vk = (cos(Ek) - eph.e) / (1 - eph.e * cos(Ek));
+//     double vk = atan2(sin_vk, cos_vk);
+    
+//     // 计算纬度幅角
+//     double phik = vk + eph.omega;
+    
+//     // 计算周期改正项
+//     double delta_uk = eph.Cus * sin(2 * phik) + eph.Cuc * cos(2 * phik);
+//     double delta_rk = eph.Crs * sin(2 * phik) + eph.Crc * cos(2 * phik);
+//     double delta_ik = eph.Cis * sin(2 * phik) + eph.Cic * cos(2 * phik);
+    
+//     // 计算改正后的参数
+//     double uk = phik + delta_uk;
+//     double rk = A * (1 - eph.e * cos(Ek)) + delta_rk;
+//     double ik = eph.i0 + eph.IDOT * tk + delta_ik;
+    
+//     // 计算轨道平面坐标
+//     double xk = rk * cos(uk);
+//     double yk = rk * sin(uk);
+    
+//     // // 计算升交点经度
+//     // double OMEGAk = eph.OMEGA + (eph.OMEGAdot - omega_e) * tk - omega_e * eph.toe;
+    
+//     // BDS坐标系处理：GEO卫星有特殊处理，但这里先处理MEO/IGSO
+//     double OMEGAk;
+//     if (isBDS) {
+//         // BDS使用BDCS坐标系，需要特殊处理
+//         OMEGAk = eph.OMEGA + (eph.OMEGAdot - omega_e) * tk - omega_e * eph.toe;
+//     } else {
+//         // GPS使用WGS84
+//         OMEGAk = eph.OMEGA + (eph.OMEGAdot - omega_e) * tk - omega_e * eph.toe;
+//     }
+
+//     // 计算ECEF坐标
+//     pos.X = xk * cos(OMEGAk) - yk * cos(ik) * sin(OMEGAk);
+//     pos.Y = xk * sin(OMEGAk) + yk * cos(ik) * cos(OMEGAk);
+//     pos.Z = yk * sin(ik);
+    
+//     return pos;
+// }
 
 // 查找精密星历点
 bool FindPrecisePoint(int prn, char satSystem, double time, int hour, int minute,
@@ -436,6 +466,143 @@ bool FindPrecisePoint(int prn, char satSystem, double time, int hour, int minute
     
     return found;
 }
+
+// GPS/BDS卫星位置计算（修正版）
+SatellitePosition CalculateSatellitePosition(const EPHEMERISBLOCK& eph, double transmitTime, int hour, int minute) {
+    SatellitePosition pos;
+    pos.PRN = eph.PRN;
+    pos.satSystem = eph.satSystem;
+    pos.time = transmitTime;
+    pos.hour = hour;
+    pos.minute = minute;
+    pos.tow = fmod(transmitTime, 86400.0);
+    
+    bool isBDS = (eph.satSystem == 'C');
+    
+    // 使用正确的常数
+    double mu = isBDS ? MU_BDS : MU_GPS;
+    double omega_e = isBDS ? OMEGA_E_BDS : OMEGA_E_GPS;
+    
+    // 关键修改：BDS时间系统处理
+    // BDS使用BDT时间，与GPS时间有14秒偏差
+    double timeOffset = isBDS ? 14.0 : 0.0;
+    double adjustedTime = transmitTime - timeOffset;
+    
+    // 计算时间差 tk = t - toe（使用调整后的时间）
+    double tk = adjustedTime - eph.toe;
+    
+    // 处理周跳（根据图片说明）
+    if (tk > 302400.0) tk -= 604800.0;
+    if (tk < -302400.0) tk += 604800.0;
+    
+    // 计算平均角速度
+    double A = eph.SqrtA * eph.SqrtA;
+    double n0 = sqrt(mu / (A * A * A));
+    double n = n0 + eph.Deltan;
+    
+    // 计算平近点角
+    double Mk = eph.M0 + n * tk;
+    
+    // 迭代计算偏近点角（开普勒方程）
+    double Ek = Mk;
+    for (int i = 0; i < 10; i++) {
+        double Ek_prev = Ek;
+        Ek = Mk + eph.e * sin(Ek);
+        if (fabs(Ek - Ek_prev) < 1e-12) break;
+    }
+    
+    // 计算真近点角
+    double sin_vk = (sqrt(1 - eph.e * eph.e) * sin(Ek)) / (1 - eph.e * cos(Ek));
+    double cos_vk = (cos(Ek) - eph.e) / (1 - eph.e * cos(Ek));
+    double vk = atan2(sin_vk, cos_vk);
+    
+    // 计算纬度幅角
+    double phik = vk + eph.omega;
+    
+    // 计算周期改正项
+    double delta_uk = eph.Cus * sin(2 * phik) + eph.Cuc * cos(2 * phik);
+    double delta_rk = eph.Crs * sin(2 * phik) + eph.Crc * cos(2 * phik);
+    double delta_ik = eph.Cis * sin(2 * phik) + eph.Cic * cos(2 * phik);
+    
+    // 计算改正后的参数
+    double uk = phik + delta_uk;
+    double rk = A * (1 - eph.e * cos(Ek)) + delta_rk;
+    double ik = eph.i0 + eph.IDOT * tk + delta_ik;
+    
+    // 计算轨道平面坐标
+    double xk = rk * cos(uk);
+    double yk = rk * sin(uk);
+    
+    // 关键修改：BDS卫星分类处理
+    if (isBDS) {
+        // 判断卫星类型：GEO卫星(PRN 1-5), MEO/IGSO卫星(PRN 6-35)
+        bool isGEO = (eph.PRN >= 1 && eph.PRN <= 5);
+        
+        if (isGEO) {
+            // GEO卫星特殊处理（根据图片中的GEO公式）
+            // 计算历元升交点经度（惯性系）
+            double OMEGAk_inertial = eph.OMEGA + eph.OMEGAdot * tk - omega_e * eph.toe;
+            
+            // 在惯性系中的坐标
+            double X_GK = xk * cos(OMEGAk_inertial) - yk * cos(ik) * sin(OMEGAk_inertial);
+            double Y_GK = xk * sin(OMEGAk_inertial) + yk * cos(ik) * cos(OMEGAk_inertial);
+            double Z_GK = yk * sin(ik);
+            
+            // 坐标转换到BDCS系：绕Z轴旋转(ωe*tk)，再绕X轴旋转(-5°)
+            double rotationAngle = omega_e * tk;
+            double phi = -5.0 * PI / 180.0; // -5度转弧度
+            
+            // 绕Z轴旋转
+            double X_temp = X_GK * cos(rotationAngle) + Y_GK * sin(rotationAngle);
+            double Y_temp = -X_GK * sin(rotationAngle) + Y_GK * cos(rotationAngle);
+            double Z_temp = Z_GK;
+            
+            // 绕X轴旋转(-5°)
+            pos.Y = Y_temp * cos(phi) + Z_temp * sin(phi);
+            pos.Z = -Y_temp * sin(phi) + Z_temp * cos(phi);
+            pos.X = X_temp;
+            
+        } else {
+            // MEO/IGSO卫星处理（与GPS类似但使用BDCS参数）
+            double OMEGAk = eph.OMEGA + (eph.OMEGAdot - omega_e) * tk - omega_e * eph.toe;
+            
+            pos.X = xk * cos(OMEGAk) - yk * cos(ik) * sin(OMEGAk);
+            pos.Y = xk * sin(OMEGAk) + yk * cos(ik) * cos(OMEGAk);
+            pos.Z = yk * sin(ik);
+        }
+    } else {
+        // GPS卫星计算（保持不变）
+        double OMEGAk = eph.OMEGA + (eph.OMEGAdot - omega_e) * tk - omega_e * eph.toe;
+        
+        pos.X = xk * cos(OMEGAk) - yk * cos(ik) * sin(OMEGAk);
+        pos.Y = xk * sin(OMEGAk) + yk * cos(ik) * cos(OMEGAk);
+        pos.Z = yk * sin(ik);
+    }
+    
+    return pos;
+}
+
+// 添加旋转矩阵计算函数
+void RotateZ(double angle, double& x, double& y, double& z) {
+    double cosA = cos(angle);
+    double sinA = sin(angle);
+    double x_temp = x * cosA + y * sinA;
+    double y_temp = -x * sinA + y * cosA;
+    x = x_temp;
+    y = y_temp;
+    // z保持不变
+}
+
+void RotateX(double angle, double& x, double& y, double& z) {
+    double cosA = cos(angle);
+    double sinA = sin(angle);
+    double y_temp = y * cosA + z * sinA;
+    double z_temp = -y * sinA + z * cosA;
+    y = y_temp;
+    z = z_temp;
+    // x保持不变
+}
+
 
 // 比较广播星历与精密星历
 vector<PositionComparison> CompareEphemeris(const vector<SatellitePosition>& broadcastPositions,
