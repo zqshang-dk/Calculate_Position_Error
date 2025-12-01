@@ -476,7 +476,7 @@ void GenerateMatlabPlotCode(const vector<SatellitePosition>& positions, const ch
 
 int main() {
     // 读取广播星历文件
-    const char* broadcastFile = "brdm3350.19p";
+    const char* broadcastFile = "E:/STUDY/Sophomore1/卫星导航原理/Calculate_Position_Error/brdm3350.19p";
     int ephemerisBlockNum = 0;
     EPHEMERISBLOCK* ephemerisBlocks = nullptr;
     
