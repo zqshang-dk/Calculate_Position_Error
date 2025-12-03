@@ -6,7 +6,7 @@
 #include <iomanip>
 #include <cmath>
 #include <Eigen/Dense>
-
+#include<set>
 using namespace std;
 using namespace Eigen;
 
@@ -168,13 +168,52 @@ void readNavFile(const string& filename,
     fin.close();
 }
 
+// 将公历日期转换为GPS周和周内秒
+// 输入: year, month, day, hour, minute, second
+// 输出: gps_week (int, GPS周号), week_second (double, 周内秒)
+// 返回0成功, -1错误
+int CalendarToGpsTime(int year, int month, int day, int hour, int minute, double second, int& gps_week, double& week_second) {
+    if (year < 1980 || month < 1 || month > 12 || day < 1 || day > 31 || hour < 0 || hour > 23 || minute < 0 || minute > 59 || second < 0 || second >= 60) {
+        return -1;  // 无效日期
+    }
+
+    // GPS起始历元: 1980-01-06 00:00:00 UTC
+    // 计算从1980-01-06到目标日期的总天数
+    int total_days = 0;
+
+    // 计算完整年份天数 (1980 to year-1)
+    for (int y = 1980; y < year; ++y) {
+        total_days += (y % 4 == 0 && (y % 100 != 0 || y % 400 == 0)) ? 366 : 365;
+    }
+
+    // 当前年月份天数
+    int month_days[12] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
+    if (year % 4 == 0 && (year % 100 != 0 || year % 400 == 0)) month_days[1] = 29;  // 闰年
+
+    for (int m = 1; m < month; ++m) {
+        total_days += month_days[m - 1];
+    }
+    total_days += day - 6;  // 从1980-01-06开始, 减去前5天 (Jan 1-5)
+
+    // 如果total_days <0, 错误
+    if (total_days < 0) return -1;
+
+    // GPS周号和周内天
+    gps_week = total_days / 7;
+    int day_of_week = total_days % 7;
+
+    // 周内秒
+    week_second = day_of_week * 86400.0 + hour * 3600.0 + minute * 60.0 + second;
+
+    return 0;  // 成功
+}
+
 // 现在的钟差计算还是错误的，钟差计算有两个需要注意的点
 // （1）最后一定要转化为时间
 // （2）toc是指卫星参考时刻，
 // 从年月日转换为GPS周和周内秒
 
-//计算BDSC下的卫星位置
-Vector4d calBDS(const EphBlock& BDSdata){
+Vector4d calBDS(const EphBlock& BDSdata,double t){
     //计算长半轴
     double A = (BDSdata.sqrtA) * (BDSdata.sqrtA);
 
@@ -182,7 +221,7 @@ Vector4d calBDS(const EphBlock& BDSdata){
     double n0 = sqrt(mu_bds / (A * A * A));
 
     //计算观测历元到参考历元的时间差
-    double tk = BDSdata.transmissionTime - BDSdata.Toe;//(如果tk大于302400，将tk减去604800；如果tk小于-302400，则将tk加上604800。)
+    double tk = t - BDSdata.Toe;//(如果tk大于302400，将tk减去604800；如果tk小于-302400，则将tk加上604800。)
     if(tk>302400.0){
         tk -= 604800.0;
     }
@@ -269,55 +308,11 @@ Vector4d calBDS(const EphBlock& BDSdata){
     return Vector4d(Xk, Yk, Zk,dT);
 }
 
-// //GPS时间转换
-// int Calendar2GpsTime(int nYear, int nMonth, int nDay, int nHour, int nMinute, double dSecond, double &WeekSecond) {
-//     if (nYear < 1980 || nMonth < 1 || nMonth > 12 || nDay < 1 || nDay > 31) {
-//         return -1;
-//     }
-    
-//     // 计算从1980年1月6日到当前日期的天数
-//     int totalDays = 0;
-    
-//     // 计算从1980年到当前年前一年的总天数
-//     for (int year = 1980; year < nYear; year++) {
-//         if ((year % 4 == 0 && year % 100 != 0) || (year % 400 == 0)) {
-//             totalDays += 366;
-//         } else {
-//             totalDays += 365;
-//         }
-//     }
 
-//     // 计算当前年的天数
-//     int monthDays[] = {31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31};
-//     if ((nYear % 4 == 0 && nYear % 100 != 0) || (nYear % 400 == 0)) {
-//         monthDays[1] = 29;
-//     }
-    
-//     for (int month = 1; month < nMonth; month++) {
-//         totalDays += monthDays[month - 1];
-//     }
-    
-//     totalDays += (nDay - 6);  // GPS时间从1980年1月6日开始
-    
-//     int weekno = totalDays / 7;
-//     int dayofweek = totalDays % 7;
-    
-//     WeekSecond = dayofweek * 86400.0 + nHour * 3600.0 + nMinute * 60.0 + dSecond;
-    
-//     return weekno;
-// }
-
-
-//计算GPS卫星的位置
-Vector4d calGPS(const EphBlock& GPSdata){
-    // ---------------------- 步骤1：计算时间差tk ----------------------
-    //Calendar2GpsTime(GPSdata.year, GPSdata.month, GPSdata.day, GPSdata.hour, GPSdata.minute,GPSdata.second, GPSdata.toc);
-    double tk = GPSdata.transmissionTime - GPSdata.Toe;
-    // 处理周跳（若tk超出±302400秒，调整±604800秒）
-    if (tk > 302400.0)
-        tk -= 604800.0;
-    if (tk < -302400.0)
-        tk += 604800.0;
+Vector4d calGPS(const EphBlock& GPSdata,double t){
+    double tk = t - GPSdata.Toe;
+    if (tk > 302400.0) tk -= 604800.0;
+    if (tk < -302400.0) tk += 604800.0;
 
     //计算钟差
     //double deltat=GPSdata.transmissionTime-
@@ -361,8 +356,6 @@ Vector4d calGPS(const EphBlock& GPSdata){
 
 
     // ---------------------- 步骤7：计算升交点赤经Ωk ----------------------
-    //double OmegaDot = OMEGA_REF_dot + GPSdata.OMEGAdot; // 升交点赤经变化率
-    //double OMEGAk = GPSdata.OMEGA0 + (OmegaDot - OMEGA_e_dot_gps) * tk - OMEGA_e_dot_gps * GPSdata.Toe;
     double OMEGAk = GPSdata.OMEGA0 + (GPSdata.OMEGAdot - OMEGA_e_dot_gps) * tk - OMEGA_e_dot_gps * GPSdata.Toe;
 
     // ---------------------- 步骤8：轨道平面内坐标(xk', yk') ----------------------
@@ -380,104 +373,30 @@ Vector4d calGPS(const EphBlock& GPSdata){
     double yk = xk_prime * sinOmega + yk_prime * cosi * cosOmega;
     double zk = yk_prime * sini;
 
+    // 添加相对论修正 (只对GPS, 单位秒)
+    double F = -4.442807633e-10;  // -2*sqrt(mu_gps)/c
+    double rel_corr = F * GPSdata.e * GPSdata.sqrtA * sin(Ek);
+    dT += rel_corr;
+
     return Vector4d(xk, yk, zk,dT);
 }
 
-// ------------------- 保存 GPS 位置到文件 -------------------
-void saveGPSPosition(const string& filename, const vector<EphBlock>& gps)
-{
-    ofstream fout(filename);
-    if (!fout.is_open()) {
-        cerr << "无法创建 GPS 位置文件: " << filename << endl;
-        return;
-    }
-    fout << fixed << setprecision(3);  // 位置一般保留到毫米级（3位小数，单位：米）
-    //fout << "# PRN        X (m)              Y (m)              Z (m)" << endl;
-    fout << "# PRN   Epoch (UTC)                  X (m)              Y (m)              Z (m)     dt(m)" << endl;
+// 为给定PRN和t, 找最佳EphBlock (closest Toe, |tk| < 7200s)
+const EphBlock* findBestEph(const vector<EphBlock>& sats, int prn, double t) {
+    const EphBlock* best = nullptr;
+    double min_diff = 7200.0;  // 最大有效范围 (2小时)
 
-    for (const auto& g : gps) {
-        stringstream epoch_ss;
-        epoch_ss << fixed << setprecision(1)  // second小数精度，可调整
-                << g.year << "-" << setw(2) << setfill('0') << g.month << "-" << setw(2) << g.day << " "
-                << setw(2) << g.hour << ":" << setw(2) << g.minute << ":" << setw(5) << g.second;
-        string epoch = epoch_ss.str();
-        Vector4d pos = calGPS(g);
-        fout << 'G' << setfill('0')<<setw(2) << g.prn << "   "
-             <<setfill(' ')
-             << setw(14) << pos(0) << "   "
-             << setw(14) << pos(1) << "   "
-             << setw(14) << pos(2) << "   "
-             << setw(14) << pos(3) << endl;
+    for (const auto& s : sats) {
+        if (s.prn == prn) {
+            double diff = fabs(t - s.Toe);
+            if (diff < min_diff) {
+                min_diff = diff;
+                best = &s;
+            }
+        }
     }
-    fout.close();
-    cout << "GPS 卫星位置已保存至: " << filename << endl;
+    return best;  // 如果无, 返回nullptr
 }
-
-// ------------------- 保存 BDS 位置到文件 -------------------
-void saveBDSPosition(const string& filename, const vector<EphBlock>& bds)
-{
-    ofstream fout(filename);
-    if (!fout.is_open()) {
-        cerr << "无法创建 BDS 位置文件: " << filename << endl;
-        return;
-    }
-    fout << fixed << setprecision(3);
-    fout << "# PRN   Epoch (UTC)                  X (m)              Y (m)              Z (m)     dt(m)" << endl;
-
-    for (const auto& b : bds) {
-        stringstream epoch_ss;
-        epoch_ss << fixed << setprecision(1)
-                << b.year << "-" << setw(2) << setfill('0') << b.month << "-" << setw(2) << b.day << " "
-                << setw(2) << b.hour << ":" << setw(2) << b.minute << ":" << setw(5) << b.second;
-        string epoch = epoch_ss.str();
-        Vector4d pos = calBDS(b);
-        fout << "C" << setfill('0')<< setw(2) << b.prn << "   "
-             <<setfill(' ')
-             << setw(14) << pos(0) << "   "
-             << setw(14) << pos(1) << "   "
-             << setw(14) << pos(2) << "   "
-             << setw(14) << pos(3) << endl;
-    }
-    fout.close();
-    cout << "BDS 卫星位置已保存至: " << filename << endl;
-}
-// struct SatData{
-//     int year;
-//     int month;
-//     int day;
-//     int hour;
-//     int minute;
-//     int second;
-// };
-// void saveGPSformat(const string& filename,const vector<SatData>& gps){
-//     ofstream fout(filename);
-//     fout << fixed << setprecision(8);
-
-//     int n = gps.size(); 
-
-//     for (int i = 0; i < n; i++)
-//     {
-//         // 输出历元行
-//         fout << "* "
-//              << gps[i].year << " "
-//              << gps[i].month << " "
-//              << gps[i].day << " "
-//              << gps[i].hour << " "
-//              << gps[i].minute << " "
-//              << gps[i].second << "\n";
-
-//         // -------- GPS部分 --------
-//         Vector3d pos_g = calGPS(gps[i]);
-
-//         fout << "G" << setfill('0') << setw(2) << gps[i].prn << setfill(' ')
-//              << " " << pos_g(0) << " " << pos_g(1) << " " << pos_g(2)
-//              << " " << pos_g(3) << "\n";
-
-//     }
-//     fout.close();
-// }
-
-
 // ------------------- 主函数 -------------------
 int main()
 {
@@ -486,21 +405,126 @@ int main()
     vector<EphBlock> gps, bds;
 
     readNavFile(filename, gps, bds);
+    // 假设文件日期2019-12-01, 计算GPS周
+    int gps_week;
+    double dummy_second;  // 不用
+    if (CalendarToGpsTime(2019, 12, 1, 0, 0, 0.0, gps_week, dummy_second) != 0) {
+        cerr << "日期转换错误!" << endl;
+        return 1;
+    }
 
-    cout << "开始计算卫星位置并保存..." << endl;
+    // 收集独特PRN
+    set<int> gps_prns, bds_prns;
+    for (const auto& g : gps) gps_prns.insert(g.prn);
+    for (const auto& b : bds) bds_prns.insert(b.prn);
 
-    // 保存 GPS 位置（同时会在控制台看到进度）
-    saveGPSPosition("gps_position.txt", gps);
+    // 输出文件
+    ofstream gps_out("gps_position.txt");
+    ofstream bds_out("bds_position.txt");
 
-    // 保存 BDS 位置
-    saveBDSPosition("bds_position.txt", bds);
+    gps_out << fixed << setprecision(3);
+    bds_out << fixed << setprecision(3);
 
-    // saveTxt("gps_ephemeris.txt", gps);
-    // saveTxt("bds_ephemeris.txt", bds);
+    // 每15min (900s), 从t=0到86400
+    double interval = 900.0;
+    for (double t = 0.0; t < 86400.0; t += interval) {
+        // 计算当前UTC时间 (year month day hour min sec)
+        int hour = static_cast<int>(t / 3600);
+        int min = static_cast<int>((t - hour*3600) / 60);
+        double sec = t - hour*3600 - min*60;
 
-    cout << "读取完成！" << endl;
-    cout << "GPS 星历数目: " << gps.size() << endl;
-    cout << "BDS 星历数目: " << bds.size() << endl;
+        // 输出* 行
+        gps_out << "* 2019 12 1 " << hour << " " << min << " " << fixed << setprecision(8) << sec << " " << interval << endl;
+        bds_out << "* 2019 12 1 " << hour << " " << min << " " << fixed << setprecision(8) << sec << " " << interval << endl;
+
+        // GPS
+        for (int prn : gps_prns) {
+            const EphBlock* eph = findBestEph(gps, prn, t);
+            if (eph) {
+                Vector4d pos = calGPS(*eph, t);
+                gps_out << "G" << setfill('0') << setw(2) << prn << " "
+                        << setw(13) << pos(0) << " " << setw(13) << pos(1) << " " << setw(13) << pos(2) << " "
+                        << setprecision(8) << pos(3) << endl;
+            }
+        }
+
+        // BDS
+        for (int prn : bds_prns) {
+            const EphBlock* eph = findBestEph(bds, prn, t);
+            if (eph) {
+                Vector4d pos = calBDS(*eph, t);
+                bds_out << "C" << setfill('0') << setw(2) << prn << " "
+                        << setw(13) << pos(0) << " " << setw(13) << pos(1) << " " << setw(13) << pos(2) << " "
+                        << setprecision(8) << pos(3) << endl;
+            }
+        }
+    }
+
+    gps_out.close();
+    bds_out.close();
+
+        // ==================== 新增部分：生成每60秒的轨迹文件（用于绘图） ====================
+
+    cout << "正在生成全天轨迹文件（每60秒一点）用于绘图..." << endl;
+
+    // 打开CSV文件
+    ofstream gps_track("gps_track.csv");
+    ofstream bds_track("bds_track.csv");
+
+    // 写表头
+    gps_track << "PRN,t,X,Y,Z\n";
+    bds_track << "PRN,t,X,Y,Z\n";
+
+    gps_track << fixed << setprecision(6);
+    bds_track << fixed << setprecision(6);
+
+    // 每60秒计算一次（全天 1440 个点）
+    for (double t = 0.0; t < 86400.0; t += 60.0) {
+        // GPS 所有卫星
+        for (int prn : gps_prns) {
+            const EphBlock* eph = findBestEph(gps, prn, t);
+            if (eph) {
+                Vector4d pos = calGPS(*eph, t);
+                gps_track << prn << ","
+                          << t << ","
+                          << pos(0) << ","
+                          << pos(1) << ","
+                          << pos(2) << "\n";
+            }
+        }
+
+        // BDS 所有卫星
+        for (int prn : bds_prns) {
+            const EphBlock* eph = findBestEph(bds, prn, t);
+            if (eph) {
+                Vector4d pos = calBDS(*eph, t);
+                bds_track << prn << ","
+                          << t << ","
+                          << pos(0) << ","
+                          << pos(1) << ","
+                          << pos(2) << "\n";
+            }
+        }
+
+        // 进度提示（每100个点打印一次）
+        if (static_cast<int>(t) % 6000 == 0) {  // 每10分钟提示一次
+            int hour = static_cast<int>(t / 3600);
+            int minute = static_cast<int>((t - hour*3600)/60);
+            cout << "   已计算到: " << hour << ":" << setw(2) << setfill('0') << minute << endl;
+        }
+    }
+
+    gps_track.close();
+    bds_track.close();
+
+    cout << "轨迹文件生成完成！" << endl;
+    cout << "   gps_track.csv  → 用于 GPS 轨迹绘图（每60秒）" << endl;
+    cout << "   bds_track.csv  → 用于 BDS 轨迹绘图（每60秒）" << endl;
+    // =====================================================================
+
+    cout << "输出完成! GPS文件: gps_position.txt, BDS文件: bds_position.txt" << endl;
+    cout << "GPS PRN数: " << gps_prns.size() << ", BDS PRN数: " << bds_prns.size() << endl;
 
     return 0;
+
 }
