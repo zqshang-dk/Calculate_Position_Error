@@ -62,6 +62,8 @@
     "complex": "cpp",
     "numbers": "cpp",
     "*.inc": "cpp",
-    "iostream": "cpp"
+    "iostream": "cpp",
+    "iomanip": "cpp",
+    "iosfwd": "cpp"
   }
 }
