@@ -167,77 +167,6 @@ void readNavFile(const string& filename,
     fin.close();
 }
 
-// //计算BDSC下的卫星位置
-// void calBDS(EphBlock BDSdata){
-//     //计算长半轴
-//     double A = (BDSdata.sqrtA) * (BDSdata.sqrtA);
-
-//     //计算卫星平均角速度
-//     double n0 = sqrt(mu_bds / (A * A * A));
-
-//     //计算观测历元到参考历元的时间差
-//     double tk = BDSdata.transmissionTime - BDSdata.Toe;//(如果tk大于302400，将tk减去604800；如果tk小于-302400，则将tk加上604800。)
-
-//     //改正平均角速度
-//     double n = n0 + BDSdata.Deltan;
-
-//     //计算平近点角
-//     double Mk = BDSdata.M0 + n * tk;
-
-//     //迭代计算偏近点角
-//     Mk = BDSdata.Ek - BDSdata.e * sin(Ek);
-
-//     //计算真近点角
-//     double Vk;
-//     sin(Vk) = sqrt(1 - BDSdata.e * BDSdata.e) * sin(Ek) / (1 - BDSdata.e * cos(Ek));
-//     cos(Vk) = (cos(Ek) - BDSdata.e) / (1 - BDSdata.e * sin(Ek));
-
-//     //计算纬度幅角
-//     double Phi_k = Vk + BDSdata.omega;
-
-//     //纬度幅角改正项
-//     double deltauk = BDSdata.Cus * sin(2 * Phi_k) + BDSdata.Cuc * cos(2 * Phi_k);
-//     double deltark = BDSdata.Crs * sin(2 * Phi_k) + BDSdata.Crc * cos(2 * Phi_k);
-//     double deltaik = BDSdata.Cis * sin(2 * Phi_k) + BDSdata.Cic * cos(2 * Phi_k);
-
-//     //计算改正后的纬度幅角
-//     double uk = Phi_k + deltauk;
-
-//     //计算改正后的径向
-//     double rk = A * (1 - BDSdata.e * cos(Ek)) + deltark;
-
-//     //计算改正后的轨道倾角
-//     double ik = BDSdata.i0 + BDSdata.IDOT * tk + deltaik;
-
-//     //计算卫星在轨道平面内的坐标
-//     double xk = rk * cos(uk);
-//     double yk = rk * sin(uk);
-
-//     //计算历元升交点经度(ECEF系)
-//     double OMEGAk = BDSdata.OMEGA0 + (BDSdata.OMEGAdot - OMEGA_e_dot) * tk - OMEGA_e_dot * BDSdata.Toe;
-
-//     //计算MEO/IGSO卫星在BDSC坐标系中的坐标
-//     double Xk = xk * cos(OMEGAk) - yk * cos(ik) * sin(OMEGAk);
-//     double Yk = xk * sin(OMEGAk) - yk * cos(ik) * cos(OMEGAk);
-//     double Zk = yk * sin(ik);
-
-//     //计算历元升交点经度（惯性系）
-//     OMEGAk = BDSdata.OMEGA0 + BDSdata.OMEGAdot * tk - OMEGA_e_dot * BDSdata.Toe;
-//     //计算GEO卫星在自定义坐标系中的坐标
-//     double XGk = xk * cos(OMEGAk) - yk * cos(ik) * sin(OMEGAk);
-//     double YGk = xk * sin(OMEGAk) - yk * cos(ik) * cos(OMEGAk);
-//     double ZGk = yk * sin(ik);
-
-//     Matrix3d Rx(phi) = [ (1, 0, 0), (0, cos(phi), sin(phi)), (0, -sin(phi), cos(phi)) ];
-//     Matrix3d Rz(phi) = [
-//         (cos(phi), sin(phi), 0),
-//         (-sin(phi), cos(phi), 0),
-//         (0, 0, 1),
-//     ];
-
-//     Vector3d(Xk, Yk, Zk) = Rz(OMEGA_e_dot * tk) * Rx(-5 * PI / 180) * Vector3d(XGk, YGk, ZGk);
-// }
-
 //计算BDSC下的卫星位置
 Vector3d calBDS(const EphBlock& BDSdata){
     //计算长半轴
@@ -251,7 +180,7 @@ Vector3d calBDS(const EphBlock& BDSdata){
     if(tk>302400.0){
         tk -= 604800.0;
     }
-    if(tk<302400.0){
+    if(tk<-302400.0){
         tk += 604800.0;
     }
 
@@ -360,7 +289,8 @@ Vector3d calGPS(const EphBlock& GPSdata){
 
     // ---------------------- 步骤4：计算真近点角vk ----------------------
     double sqrt_1me2 = sqrt(1 - GPSdata.e * GPSdata.e);
-    double vk = 2 * atan2( sqrt_1me2 * sin(Ek), (cos(Ek) - GPSdata.e) );
+    //double vk = 2 * atan2( sqrt_1me2 * sin(Ek), (cos(Ek) - GPSdata.e) );
+    double vk = atan2( sqrt_1me2 * sin(Ek), (cos(Ek) - GPSdata.e) );
 
 
     // ---------------------- 步骤5：计算纬度幅角及二阶调和摄动 ----------------------
@@ -381,9 +311,9 @@ Vector3d calGPS(const EphBlock& GPSdata){
 
 
     // ---------------------- 步骤7：计算升交点赤经Ωk ----------------------
-    double OmegaDot = OMEGA_REF_dot + GPSdata.OMEGAdot; // 升交点赤经变化率
-    double OMEGAk = GPSdata.OMEGA0 + (OmegaDot - OMEGA_e_dot_gps) * tk - OMEGA_e_dot_gps * GPSdata.Toe;
-
+    //double OmegaDot = OMEGA_REF_dot + GPSdata.OMEGAdot; // 升交点赤经变化率
+    //double OMEGAk = GPSdata.OMEGA0 + (OmegaDot - OMEGA_e_dot_gps) * tk - OMEGA_e_dot_gps * GPSdata.Toe;
+    double OMEGAk = GPSdata.OMEGA0 + (GPSdata.OMEGAdot - OMEGA_e_dot_gps) * tk - OMEGA_e_dot_gps * GPSdata.Toe;
 
     // ---------------------- 步骤8：轨道平面内坐标(xk', yk') ----------------------
     double xk_prime = rk * cos(uk);
@@ -403,30 +333,6 @@ Vector3d calGPS(const EphBlock& GPSdata){
     return Vector3d(xk, yk, zk);
 }
 
-
-
-
-
-// // ------------------- 输出到 TXT -------------------
-// void saveTxt(const string& filename, const vector<EphBlock>& data)
-// {
-//     ofstream fout(filename);
-
-//     for (const auto &e : data)
-//     {
-//         fout << fixed << setprecision(10);
-//         fout << e.sys << setw(2) << e.prn << " "
-//              << e.year << "-" << e.month << "-" << e.day << " "
-//              << e.hour << ":" << e.minute << ":" << e.second << "\n";
-
-//         fout << "a0 = " << e.a0 << "  a1 = " << e.a1 << "  a2 = " << e.a2 << "\n";
-//         fout << "e = " << e.e << "  sqrtA = " << e.sqrtA << "  Toe = " << e.Toe << "\n";
-//         fout << "i0 = " << e.i0 << "  omega = " << e.omega << "\n";
-//         fout << "---------------------------------------\n";
-//     }
-
-//     fout.close();
-// }
 // ------------------- 保存 GPS 位置到文件 -------------------
 void saveGPSPosition(const string& filename, const vector<EphBlock>& gps)
 {
