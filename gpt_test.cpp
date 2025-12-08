@@ -6,7 +6,7 @@
 #include <iomanip>
 #include <cmath>
 #include <Eigen/Dense>
-#include<set>
+#include <set>
 using namespace std;
 using namespace Eigen;
 
@@ -400,7 +400,7 @@ const EphBlock* findBestEph(const vector<EphBlock>& sats, int prn, double t) {
 // ------------------- 主函数 -------------------
 int main()
 {
-    string filename = "E:/STUDY/Sophomore1/卫星导航原理/Calculate_Position_Error/brdm3350.19p";  // 你可以替换成任意 RINEX 文件
+    string filename = "E:/STUDY/Sophomore1/卫星导航原理/Calculate_Position_Error/brdm3350.19p";  
 
     vector<EphBlock> gps, bds;
 
