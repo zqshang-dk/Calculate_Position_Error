@@ -13,6 +13,7 @@
 using namespace std;
 using namespace Eigen;
 
+const double C_LIGHT = 299792458;
 // 定义一个结构体来存储卫星位置数据
 struct SatellitePosition {
     int year, month, day, hour, minute;
@@ -90,9 +91,11 @@ PreciseEphemerisMap ReadSP3(const string& filename) {
                 if (!(ss >> year >> month >> day >> hour >> minute >> second)) {
                     continue; // 时间读取失败则跳过
                 }
-
+                if(abs(second) > 1e-6){
+                    continue;
+                }
                 // 只处理 15min 间隔的数据，且秒数为 0
-                if (minute % 15 != 0 || abs(second) > 1e-6) {
+                if (minute % 15 != 0  ) {
                     continue;
                 }
 
@@ -100,27 +103,57 @@ PreciseEphemerisMap ReadSP3(const string& filename) {
                 int current_total_minutes = CalculateTotalMinutes(time_key);
 
                 // 在下一个循环中读取该时间戳下的卫星位置
-                while (getline(file, line) && line.length() > 0 && line[0] == 'P') {
+                // while (getline(file, line) && line.length() > 0 && line[0] == 'P') {
+                //     if (line.length() < 50) continue;
+
+                //     string prn = line.substr(1, 3);
+                //     double x, y, z, clk;
+                //     // 位置数据从第 5 个字符开始读取 (P G01 )
+                //     stringstream ss_pos(line.substr(4));
+                    
+                //     if (!(ss_pos >> x >> y >> z >> clk)) {
+                //         continue; // 位置数据读取失败则跳过
+                //     }
+                    
+                //     // 只处理 G 和 C 卫星 (GPS 和 BDS)
+                //     if (prn[0] == 'G' || prn[0] == 'C') {
+                //         SatellitePosition pos = time_key;
+                //         pos.prn = prn;
+                //         pos.position = Eigen::Vector3d(x * KM_TO_M, y * KM_TO_M, z * KM_TO_M);
+                //         pos.clock = clk * C_LIGHT * 1e-6; // 转换为 m
+
+                //         PositionKey key = {current_total_minutes, pos.prn};
+                //         precise_map.insert({key, pos}); 
+                //     }
+                // }
+                while (true) {
+                    streampos pos_before = file.tellg();
+
+                    if (!getline(file, line)) break;
+                    if (line.length() == 0) continue;
+
+                    if (line[0] != 'P') {
+                        // 遇到下一个 epoch(*) 或文件尾，将文件指针恢复
+                        file.seekg(pos_before);
+                        break;
+                    }
+
                     if (line.length() < 50) continue;
 
                     string prn = line.substr(1, 3);
                     double x, y, z, clk;
-                    // 位置数据从第 5 个字符开始读取 (P G01 )
+
                     stringstream ss_pos(line.substr(4));
-                    
-                    if (!(ss_pos >> x >> y >> z >> clk)) {
-                        continue; // 位置数据读取失败则跳过
-                    }
-                    
-                    // 只处理 G 和 C 卫星 (GPS 和 BDS)
+                    if (!(ss_pos >> x >> y >> z >> clk)) continue;
+
                     if (prn[0] == 'G' || prn[0] == 'C') {
                         SatellitePosition pos = time_key;
                         pos.prn = prn;
-                        pos.position = Eigen::Vector3d(x * KM_TO_M, y * KM_TO_M, z * KM_TO_M);
-                        pos.clock = clk * KM_TO_M * 1e-6; // 转换为 m
+                        pos.position = Vector3d(x * KM_TO_M, y * KM_TO_M, z * KM_TO_M);
+                        pos.clock = clk * C_LIGHT * 1e-6;
 
                         PositionKey key = {current_total_minutes, pos.prn};
-                        precise_map.insert({key, pos}); 
+                        precise_map[key] = pos;
                     }
                 }
             }
@@ -235,8 +268,8 @@ void CalculateError(const PreciseEphemerisMap& precise_map, const BroadcastEphem
                     << setw(10) << error_vector(1)
                     << setw(10) << error_vector(2)
                     << setw(15) << error_3d
-                    << setw(12) << error_clk
-                    << endl;
+                    //<< setw(12) << error_clk 
+            << endl;
             
             target_prns.insert(key.second);
             error_count++;

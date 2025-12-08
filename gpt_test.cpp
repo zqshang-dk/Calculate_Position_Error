@@ -304,14 +304,14 @@ Vector4d calBDS(const EphBlock& BDSdata,double t){
 
     else{//MEO/IGSO
         double OMEGAk = BDSdata.OMEGA0 + (BDSdata.OMEGAdot - OMEGA_e_dot) * tk - OMEGA_e_dot * BDSdata.Toe;
-        X_Inertial = xk * cos(OMEGAk) - yk * cos(ik) * sin(OMEGAk);
-        Y_Inertial = xk * sin(OMEGAk) + yk * cos(ik) * cos(OMEGAk);
-        Z_Inertial = yk * sin(ik);
+        Xk = xk * cos(OMEGAk) - yk * cos(ik) * sin(OMEGAk);
+        Yk = xk * sin(OMEGAk) + yk * cos(ik) * cos(OMEGAk);
+        Zk = yk * sin(ik);
 
-        Vector3d pos_ECEF = Rz.transpose() * Vector3d(X_Inertial, Y_Inertial, Z_Inertial);
-        Xk = pos_ECEF(0);
-        Yk = pos_ECEF(1);
-        Zk = pos_ECEF(2);
+        // Vector3d pos_ECEF = Rz.transpose() * Vector3d(X_Inertial, Y_Inertial, Z_Inertial);
+        // Xk = pos_ECEF(0);
+        // Yk = pos_ECEF(1);
+        // Zk = pos_ECEF(2);
     }
     return Vector4d(Xk, Yk, Zk,dT);
 }
