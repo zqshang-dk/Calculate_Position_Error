@@ -239,13 +239,14 @@ Vector4d calBDS(const EphBlock& BDSdata,double t){
     //计算平近点角迭代求Ek
     double Ek = Mk;
     for (int i = 0; i < 10;i++){
-        Ek = Ek + (Mk - Ek + BDSdata.e * sin(Ek));
+        //Ek = Ek + (Mk - Ek + BDSdata.e * sin(Ek));
+        Ek = Mk + BDSdata.e * sin(Ek);
     }
 
 
     //计算真近点角
     double sinVk = sqrt(1 - BDSdata.e * BDSdata.e) * sin(Ek) / (1 - BDSdata.e * cos(Ek));
-    double cosVk = (cos(Ek) - BDSdata.e) / (1 - BDSdata.e * sin(Ek));
+    double cosVk = (cos(Ek) - BDSdata.e) / (1 - BDSdata.e * cos(Ek));
     double Vk = atan2(sinVk, cosVk);
 
     //计算纬度幅角
@@ -272,12 +273,20 @@ Vector4d calBDS(const EphBlock& BDSdata,double t){
     //计算历元升交点经度(ECEF系)
     //double OMEGAk = BDSdata.OMEGA0 + (BDSdata.OMEGAdot - OMEGA_e_dot) * tk - OMEGA_e_dot * BDSdata.Toe;
 
-    double Xk, Yk, Zk;
+    double X_Inertial, Y_Inertial, Z_Inertial; // 惯性系下的坐标
+    double Xk, Yk, Zk; // 最终 ECEF 坐标
+
+    double psi = OMEGA_e_dot * tk;
+    Matrix3d Rz;
+    Rz << cos(psi), sin(psi), 0,
+        -sin(psi), cos(psi), 0,
+        0, 0, 1;
     if(BDSdata.prn<=5){  //GEO卫星
         double OMEGAk = BDSdata.OMEGA0 + BDSdata.OMEGAdot * tk - OMEGA_e_dot * BDSdata.Toe;
-        double XGk = xk * cos(OMEGAk) - yk * cos(ik) * sin(OMEGAk);
-        double YGk = xk * sin(OMEGAk) + yk * cos(ik) * cos(OMEGAk);
-        double ZGk = yk * sin(ik);
+        //double OMEGAk = BDSdata.OMEGA0 + (BDSdata.OMEGAdot - OMEGA_e_dot) * tk - OMEGA_e_dot * BDSdata.Toe;
+        X_Inertial = xk * cos(OMEGAk) - yk * cos(ik) * sin(OMEGAk);
+        Y_Inertial = xk * sin(OMEGAk) + yk * cos(ik) * cos(OMEGAk);
+        Z_Inertial = yk * sin(ik);
 
         double phi = -5.0 * PI / 180;
         Matrix3d Rx;
@@ -285,13 +294,7 @@ Vector4d calBDS(const EphBlock& BDSdata,double t){
             0, cos(phi), sin(phi),
             0, -sin(phi), cos(phi);
 
-        double psi = OMEGA_e_dot * tk;
-        Matrix3d Rz;
-        Rz << cos(psi), sin(psi), 0,
-            -sin(psi), cos(psi), 0,
-            0, 0, 1;
-
-        Vector3d pos = Rz * Rx * Vector3d(XGk, YGk, ZGk);
+        Vector3d pos = Rz * Rx * Vector3d(X_Inertial, Y_Inertial, Z_Inertial);
 
         Xk = pos(0);
         Yk = pos(1);
@@ -300,10 +303,14 @@ Vector4d calBDS(const EphBlock& BDSdata,double t){
 
     else{//MEO/IGSO
         double OMEGAk = BDSdata.OMEGA0 + (BDSdata.OMEGAdot - OMEGA_e_dot) * tk - OMEGA_e_dot * BDSdata.Toe;
-        Xk = xk * cos(OMEGAk) - yk * cos(ik) * sin(OMEGAk);
-        Yk = xk * sin(OMEGAk) + yk * cos(ik) * cos(OMEGAk);
-        Zk = yk * sin(ik);
+        X_Inertial = xk * cos(OMEGAk) - yk * cos(ik) * sin(OMEGAk);
+        Y_Inertial = xk * sin(OMEGAk) + yk * cos(ik) * cos(OMEGAk);
+        Z_Inertial = yk * sin(ik);
 
+        Vector3d pos_ECEF = Rz.transpose() * Vector3d(X_Inertial, Y_Inertial, Z_Inertial);
+        Xk = pos_ECEF(0);
+        Yk = pos_ECEF(1);
+        Zk = pos_ECEF(2);
     }
     return Vector4d(Xk, Yk, Zk,dT);
 }

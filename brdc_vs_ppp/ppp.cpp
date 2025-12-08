@@ -322,8 +322,8 @@ void CalculateError(const PreciseEphemerisMap& precise_map, const BroadcastEphem
 void CalculatePositionError() {
     // 假设您已将文件放在程序运行目录下
     std::string sp3_file = "E:/STUDY/Sophomore1/卫星导航原理/Calculate_Position_Error/WUM0MGXFIN_20193350000_01D_15M_ORB.SP3";
-    std::string gps_broadcast_file = "E:/STUDY/Sophomore1/卫星导航原理/Calculate_Position_Error/gps_position.txt";
-    std::string bds_broadcast_file = "E:/STUDY/Sophomore1/卫星导航原理/Calculate_Position_Error/bds_position.txt";
+    std::string gps_broadcast_file = "E:/STUDY/Sophomore1/卫星导航原理/Calculate_Position_Error/output/gps_position.txt";
+    std::string bds_broadcast_file = "E:/STUDY/Sophomore1/卫星导航原理/Calculate_Position_Error/output/bds_position.txt";
     std::string gps_error_output = "gps_orbit_error.txt";
     std::string bds_error_output = "bds_orbit_error.txt";
 
