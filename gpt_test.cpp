@@ -222,6 +222,7 @@ Vector4d calBDS(const EphBlock& BDSdata,double t){
 
     //计算观测历元到参考历元的时间差
     double tk = t - BDSdata.Toe;//(如果tk大于302400，将tk减去604800；如果tk小于-302400，则将tk加上604800。)
+    tk -= 14;
     if(tk>302400.0){
         tk -= 604800.0;
     }

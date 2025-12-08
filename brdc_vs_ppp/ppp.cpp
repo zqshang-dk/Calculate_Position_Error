@@ -10,22 +10,25 @@
 #include <map>
 #include <algorithm>
 
+using namespace std;
+using namespace Eigen;
+
 // 定义一个结构体来存储卫星位置数据
 struct SatellitePosition {
     int year, month, day, hour, minute;
     double second;
-    std::string prn;
+    string prn;
     Eigen::Vector3d position; // X, Y, Z
     double clock;           // 钟差 (m)
 };
 
 // 重新定义 Key 的类型：{从2019/12/1 00:00开始的总分钟数, PRN}
-using PositionKey = std::pair<int, std::string>;
+using PositionKey = pair<int, string>;
 
 // 用于存储精密星历数据的映射
-using PreciseEphemerisMap = std::map<PositionKey, SatellitePosition>;
+using PreciseEphemerisMap = map<PositionKey, SatellitePosition>;
 // 用于存储广播星历数据的映射
-using BroadcastEphemerisMap = std::map<PositionKey, SatellitePosition>;
+using BroadcastEphemerisMap = map<PositionKey, SatellitePosition>;
 
 /**
  * @brief 计算时间点相对于 2019-12-01 00:00:00 的总分钟数
@@ -40,96 +43,24 @@ int CalculateTotalMinutes(const SatellitePosition& pos) {
 }
 
 /**
- * @brief 读取 SP3 精密星历文件
- * @param filename SP3 文件路径
- * @return 存储精密星历数据的映射
- */
-// PreciseEphemerisMap ReadSP3(const std::string& filename) {
-//     PreciseEphemerisMap precise_map;
-//     std::ifstream file(filename);
-//     std::string line;
-    
-//     if (!file.is_open()) {
-//         std::cerr << "Error: Unable to open SP3 file: " << filename << std::endl;
-//         return precise_map;
-//     }
-
-//     const double KM_TO_M = 1000.0;
-
-//     while (std::getline(file, line)) {
-//         if (line.length() < 3) continue;
-
-//         // 读取时间标记 (Epoch Flag)
-//         if (line[0] == '*') {
-//             int year, month, day, hour, minute;
-//             double second;
-            
-//             // 假设 SP3 文件时间格式为：* YYYY MM DD HH MM SS.sssss...
-//             if (line.length() >= 25 && isdigit(line[1])) {
-//                 std::stringstream ss(line.substr(2));
-//                 // 确保时间读取的正确性
-//                 if (!(ss >> year >> month >> day >> hour >> minute >> second)) {
-//                     continue; // 读取失败则跳过
-//                 }
-
-//                 // 只处理 15min 间隔的数据，并忽略秒数非 0 的情况
-//                 if (minute % 15 != 0 || std::abs(second) > 1e-6) {
-//                     continue;
-//                 }
-
-//                 SatellitePosition time_key = {year, month, day, hour, minute, second};
-//                 int current_total_minutes = CalculateTotalMinutes(time_key);
-
-//                 // 在下一个循环中读取该时间戳下的卫星位置
-//                 while (std::getline(file, line) && line[0] == 'P') {
-//                     if (line.length() < 50) continue;
-
-//                     std::string prn = line.substr(1, 3);
-//                     double x, y, z, clk;
-//                     std::stringstream ss_pos(line.substr(4));
-                    
-//                     // 只处理 G 和 C 卫星 (GPS 和 BDS)
-//                     if (prn[0] == 'G' || prn[0] == 'C') {
-//                         if (!(ss_pos >> x >> y >> z >> clk)) {
-//                             continue; // 位置数据读取失败则跳过
-//                         }
-
-//                         SatellitePosition pos = time_key;
-//                         pos.prn = prn;
-//                         pos.position = Eigen::Vector3d(x * KM_TO_M, y * KM_TO_M, z * KM_TO_M);
-//                         pos.clock = clk * KM_TO_M * 1e-6; // 转换为 m
-
-//                         // 修正后的 insert 语句
-//                         PositionKey key = {current_total_minutes, pos.prn};
-//                         precise_map.insert({key, pos}); // 使用 std::pair<Key, Value> 结构
-//                     }
-//                 }
-//             }
-//         }
-//     }
-//     file.close();
-//     std::cout << "Successfully read " << precise_map.size() << " position records from SP3 file." << std::endl;
-//     return precise_map;
-// }
-/**
  * @brief 读取 SP3 精密星历文件 (改进版本：更稳健地跳过头部)
  * @param filename SP3 文件路径
  * @return 存储精密星历数据的映射
  */
-PreciseEphemerisMap ReadSP3(const std::string& filename) {
+PreciseEphemerisMap ReadSP3(const string& filename) {
     PreciseEphemerisMap precise_map;
-    std::ifstream file(filename);
-    std::string line;
+    ifstream file(filename);
+    string line;
     
     if (!file.is_open()) {
-        std::cerr << "Error: Unable to open SP3 file: " << filename << std::endl;
+        cerr << "Error: Unable to open SP3 file: " << filename << endl;
         return precise_map;
     }
 
     const double KM_TO_M = 1000.0;
     bool in_header = true; // 增加一个标志，用来跳过所有头部信息
 
-    while (std::getline(file, line)) {
+    while (getline(file, line)) {
         if (line.length() < 3) continue;
 
         // 1. 跳过头部注释行
@@ -154,14 +85,14 @@ PreciseEphemerisMap ReadSP3(const std::string& filename) {
             // SP3 标准时间格式：* YYYY MM DD HH MM SS.sssss...
             if (line.length() >= 25) {
                 // 确保是从第 3 个字符开始读取，跳过 * 和空格
-                std::stringstream ss(line.substr(2));
+                stringstream ss(line.substr(2));
                 
                 if (!(ss >> year >> month >> day >> hour >> minute >> second)) {
                     continue; // 时间读取失败则跳过
                 }
 
                 // 只处理 15min 间隔的数据，且秒数为 0
-                if (minute % 15 != 0 || std::abs(second) > 1e-6) {
+                if (minute % 15 != 0 || abs(second) > 1e-6) {
                     continue;
                 }
 
@@ -169,13 +100,13 @@ PreciseEphemerisMap ReadSP3(const std::string& filename) {
                 int current_total_minutes = CalculateTotalMinutes(time_key);
 
                 // 在下一个循环中读取该时间戳下的卫星位置
-                while (std::getline(file, line) && line.length() > 0 && line[0] == 'P') {
+                while (getline(file, line) && line.length() > 0 && line[0] == 'P') {
                     if (line.length() < 50) continue;
 
-                    std::string prn = line.substr(1, 3);
+                    string prn = line.substr(1, 3);
                     double x, y, z, clk;
                     // 位置数据从第 5 个字符开始读取 (P G01 )
-                    std::stringstream ss_pos(line.substr(4));
+                    stringstream ss_pos(line.substr(4));
                     
                     if (!(ss_pos >> x >> y >> z >> clk)) {
                         continue; // 位置数据读取失败则跳过
@@ -196,7 +127,7 @@ PreciseEphemerisMap ReadSP3(const std::string& filename) {
         }
     }
     file.close();
-    std::cout << "Successfully read " << precise_map.size() << " position records from SP3 file." << std::endl;
+    cout << "Successfully read " << precise_map.size() << " position records from SP3 file." << endl;
     return precise_map;
 }
 
@@ -205,24 +136,24 @@ PreciseEphemerisMap ReadSP3(const std::string& filename) {
  * @param filename 文件路径
  * @return 存储广播星历计算位置数据的映射
  */
-BroadcastEphemerisMap ReadBroadcastEphemeris(const std::string& filename) {
+BroadcastEphemerisMap ReadBroadcastEphemeris(const string& filename) {
     BroadcastEphemerisMap broadcast_map;
-    std::ifstream file(filename);
-    std::string line;
+    ifstream file(filename);
+    string line;
     
     if (!file.is_open()) {
-        std::cerr << "Error: Unable to open broadcast ephemeris file: " << filename << std::endl;
+        cerr << "Error: Unable to open broadcast ephemeris file: " << filename << endl;
         return broadcast_map;
     }
 
     SatellitePosition current_time_key;
     
-    while (std::getline(file, line)) {
+    while (getline(file, line)) {
         if (line.length() == 0) continue;
 
         if (line[0] == '*') {
             // 时间行: * 2019 12 1 0 0 0.00000000 900.00000000
-            std::stringstream ss(line.substr(1));
+            stringstream ss(line.substr(1));
             // 确保时间读取的正确性
             if (!(ss >> current_time_key.year >> current_time_key.month >> current_time_key.day 
                >> current_time_key.hour >> current_time_key.minute >> current_time_key.second)) {
@@ -236,7 +167,7 @@ BroadcastEphemerisMap ReadBroadcastEphemeris(const std::string& filename) {
 
         // 卫星位置行: G02 -15007423.16652131 14399954.52302857 17077873.16419729 4397.88031535
         if (line[0] == 'G' || line[0] == 'C') {
-            std::stringstream ss(line);
+            stringstream ss(line);
             SatellitePosition pos = current_time_key;
             double x, y, z, clk;
 
@@ -254,7 +185,7 @@ BroadcastEphemerisMap ReadBroadcastEphemeris(const std::string& filename) {
         }
     }
     file.close();
-    std::cout << "Successfully read " << broadcast_map.size() << " position records from broadcast ephemeris file." << std::endl;
+    cout << "Successfully read " << broadcast_map.size() << " position records from broadcast ephemeris file." << endl;
     return broadcast_map;
 }
 
@@ -262,19 +193,19 @@ BroadcastEphemerisMap ReadBroadcastEphemeris(const std::string& filename) {
 /**
  * @brief 对比精密星历和广播星历的位置，计算误差并输出到文件
  */
-void CalculateError(const PreciseEphemerisMap& precise_map, const BroadcastEphemerisMap& broadcast_map, char system, const std::string& output_filename) {
-    std::ofstream outfile(output_filename);
+void CalculateError(const PreciseEphemerisMap& precise_map, const BroadcastEphemerisMap& broadcast_map, char system, const string& output_filename) {
+    ofstream outfile(output_filename);
     if (!outfile.is_open()) {
-        std::cerr << "Error: Unable to open output file: " << output_filename << std::endl;
+        cerr << "Error: Unable to open output file: " << output_filename << endl;
         return;
     }
 
     // 写入文件头
-    outfile << std::fixed << std::setprecision(4);
-    outfile << "# Time (min)   PRN   dX (m)   dY (m)   dZ (m)   3D Error (m)   dClk (m)" << std::endl;
-    outfile << "# ----------------------------------------------------------------------" << std::endl;
+    outfile << fixed << setprecision(4);
+    outfile << "# Time (min)   PRN   dX (m)   dY (m)   dZ (m)   3D Error (m)   dClk (m)" << endl;
+    outfile << "# ----------------------------------------------------------------------" << endl;
     
-    std::set<std::string> target_prns;
+    set<string> target_prns;
     int error_count = 0;
 
     // 遍历广播星历数据，以广播星历的时间/PRN为基准进行查找
@@ -298,14 +229,14 @@ void CalculateError(const PreciseEphemerisMap& precise_map, const BroadcastEphem
             double error_clk = broadcast_pos.clock - precise_pos.clock;
 
             // 输出结果
-            outfile << std::setw(12) << key.first // 总分钟数
-                    << std::setw(6) << key.second // PRN
-                    << std::setw(10) << error_vector(0)
-                    << std::setw(10) << error_vector(1)
-                    << std::setw(10) << error_vector(2)
-                    << std::setw(15) << error_3d
-                    << std::setw(12) << error_clk
-                    << std::endl;
+            outfile << setw(12) << key.first // 总分钟数
+                    << setw(6) << key.second // PRN
+                    << setw(10) << error_vector(0)
+                    << setw(10) << error_vector(1)
+                    << setw(10) << error_vector(2)
+                    << setw(15) << error_3d
+                    << setw(12) << error_clk
+                    << endl;
             
             target_prns.insert(key.second);
             error_count++;
@@ -313,7 +244,7 @@ void CalculateError(const PreciseEphemerisMap& precise_map, const BroadcastEphem
     }
 
     outfile.close();
-    std::cout << "Successfully calculated and saved " << system << " system errors to " << output_filename << ". Total matched records: " << error_count << std::endl;
+    cout << "Successfully calculated and saved " << system << " system errors to " << output_filename << ". Total matched records: " << error_count << endl;
 }
 
 /**
@@ -321,11 +252,11 @@ void CalculateError(const PreciseEphemerisMap& precise_map, const BroadcastEphem
  */
 void CalculatePositionError() {
     // 假设您已将文件放在程序运行目录下
-    std::string sp3_file = "E:/STUDY/Sophomore1/卫星导航原理/Calculate_Position_Error/WUM0MGXFIN_20193350000_01D_15M_ORB.SP3";
-    std::string gps_broadcast_file = "E:/STUDY/Sophomore1/卫星导航原理/Calculate_Position_Error/output/gps_position.txt";
-    std::string bds_broadcast_file = "E:/STUDY/Sophomore1/卫星导航原理/Calculate_Position_Error/output/bds_position.txt";
-    std::string gps_error_output = "gps_orbit_error.txt";
-    std::string bds_error_output = "bds_orbit_error.txt";
+    string sp3_file = "E:/STUDY/Sophomore1/卫星导航原理/Calculate_Position_Error/WUM0MGXFIN_20193350000_01D_15M_ORB.SP3";
+    string gps_broadcast_file = "E:/STUDY/Sophomore1/卫星导航原理/Calculate_Position_Error/output/gps_position.txt";
+    string bds_broadcast_file = "E:/STUDY/Sophomore1/卫星导航原理/Calculate_Position_Error/output/bds_position.txt";
+    string gps_error_output = "gps_orbit_error.txt";
+    string bds_error_output = "bds_orbit_error.txt";
 
     // --- 1. 读取精密星历文件（SP3） ---
     PreciseEphemerisMap precise_ephemeris = ReadSP3(sp3_file);
@@ -344,7 +275,7 @@ void CalculatePositionError() {
 // 主函数
 int main() {
     // 设置输出流的浮点数格式
-    std::cout << std::fixed << std::setprecision(2);
+    cout << fixed << setprecision(2);
     
     CalculatePositionError();
 
